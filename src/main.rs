@@ -1,5 +1,6 @@
 use std::{fs, str::FromStr};
 
+use clap::Parser;
 use futures::executor;
 use logos::{Lexer, Logos};
 use owo_colors::OwoColorize;
@@ -31,6 +32,13 @@ enum Token {
     // #[regex(r"", logos::skip)]
     Error,
 }
+
+#[derive(Parser, Debug)]
+#[clap(author, about, version, long_about = None)]
+struct Args {
+    file: String,
+}
+
 fn cli_test(lex: &mut logos::Lexer<Token>) -> Option<(String, String)> {
     let statement = lex.slice();
     let command = statement
@@ -81,8 +89,9 @@ fn http_test(lex: &mut logos::Lexer<Token>) -> Option<(String, String, String)> 
 }
 #[tokio::main]
 async fn main() {
-    let input = fs::read_to_string("sample.tst").expect("Could not read file");
-    let mut lex = Token::lexer(&input);
+    let args = Args::parse();
+    let input = fs::read_to_string(&args.file).expect("Could not read file");
+    let lex = Token::lexer(&input);
     let mut base_url = String::new();
     let http_client = Client::new();
     let mut indent = 0;
