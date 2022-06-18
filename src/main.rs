@@ -7,15 +7,15 @@ use reqwest::{Client, Method}; // 0.3.1
 
 #[derive(Logos, Debug, PartialEq)]
 enum Token {
-    #[error]
-    #[regex(r"[\t\n\f]+", logos::skip)]
-    Error,
-
     #[regex(r"Test \w+", test)]
     Test(String),
 
-    #[regex(r"[\w()]+ returns .+", test_statement)]
+    #[regex(r"Function [\w()]+ returns .+", test_statement)]
     TestStatement((String, String)),
+
+    #[regex(r"Executing `[^`]+` returns .+", cli_test)]
+    CLITest((String, String)),
+
     #[regex(r"Base URL is .+", base_url)]
     BaseUrl(String),
 
@@ -24,7 +24,23 @@ enum Token {
         http_test
     )]
     HTTPTest((String, String, String)),
+    #[error]
+    // #[regex(r"", logos::skip)]
+    Error,
 }
+fn cli_test(lex: &mut logos::Lexer<Token>) -> Option<(String, String)> {
+    let statement = lex.slice();
+    let command = statement
+        .chars()
+        .skip_while(|c| *c != '`')
+        .skip(1)
+        .take_while(|c| *c != '`')
+        .collect::<String>();
+    let expected_value = statement.split("returns ").nth(1).unwrap();
+
+    Some((command.to_string(), expected_value.to_string()))
+}
+
 fn base_url(lex: &mut logos::Lexer<Token>) -> Option<String> {
     lex.slice()
         .split_whitespace()
@@ -37,15 +53,23 @@ fn test(lex: &mut logos::Lexer<Token>) -> Option<String> {
 }
 fn test_statement(lex: &mut logos::Lexer<Token>) -> Option<(String, String)> {
     let statement = lex.slice();
-    let function_name = statement.split(" ").nth(0).unwrap();
-    let expected_value = statement.split(" ").nth(2).unwrap();
+    let function_name = statement.split(" ").nth(1).unwrap();
+    let expected_value = statement
+        .split(" ")
+        .skip(3)
+        .collect::<Vec<&str>>()
+        .join(" ");
     Some((function_name.to_string(), expected_value.to_string()))
 }
 fn http_test(lex: &mut logos::Lexer<Token>) -> Option<(String, String, String)> {
     let statement = lex.slice();
     let method = statement.split(" ").nth(0).unwrap();
     let url = statement.split(" ").nth(1).unwrap();
-    let expected_value = statement.split(" ").nth(3).unwrap();
+    let expected_value = statement
+        .split(" ")
+        .skip(3)
+        .collect::<Vec<&str>>()
+        .join(" ");
     Some((
         method.to_string(),
         url.to_string(),
@@ -83,7 +107,7 @@ async fn main() {
                     Ok(x) => {
                         let body = x.text().await.unwrap();
                         if body != expected_value {
-                            fail_reason.push_str("Response body did not match expected value");
+                            fail_reason.push_str("Response did not match expected value");
                             fail_reason.push_str("\n");
                             fail_reason.push_str(&format!("Expected: {}", expected_value));
                             fail_reason.push_str("\n");
@@ -100,8 +124,38 @@ async fn main() {
                     println!("{}", "Passed".green());
                 }
             }
+            Token::CLITest((command, expected_value)) => {
+                println!("{}", command);
+                let command = std::process::Command::new("sh")
+                    .arg("-c")
+                    .arg(command)
+                    .output();
+                let mut fail_reason = String::new();
+                match command {
+                    Ok(x) => {
+                        if std::str::from_utf8(&x.stdout).unwrap() != expected_value {
+                            fail_reason.push_str("Response body did not match expected value");
+                            fail_reason.push_str("\n");
+                            fail_reason.push_str(&format!("Expected: {}", expected_value));
+                            fail_reason.push_str("\n");
+                            fail_reason.push_str(&format!(
+                                "Actual: {}",
+                                std::str::from_utf8(&x.stdout).unwrap()
+                            ));
+                        }
+                    }
+                    Err(e) => {
+                        fail_reason.push_str(&format!("{}", e));
+                    }
+                }
+                if fail_reason.len() > 0 {
+                    println!("{}", fail_reason.red());
+                } else {
+                    println!("{}", "Passed".green());
+                }
+            }
             Token::Error => {
-                // println!(".");
+                // println!("??? {:?}", token);
             }
             _ => {
                 println!("{:?}", token);
