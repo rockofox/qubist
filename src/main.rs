@@ -7,8 +7,11 @@ use reqwest::{Client, Method}; // 0.3.1
 
 #[derive(Logos, Debug, PartialEq)]
 enum Token {
-    #[regex(r"Test \w+", test)]
+    #[regex(r"Test [\w ]+", test)]
     Test(String),
+
+    #[regex(r"End")]
+    End,
 
     #[regex(r"Function [\w()]+ returns .+", test_statement)]
     TestStatement((String, String)),
@@ -82,16 +85,25 @@ async fn main() {
     let mut lex = Token::lexer(&input);
     let mut base_url = String::new();
     let http_client = Client::new();
+    let mut indent = 0;
+    let indent_character = "    ";
     for token in lex {
         match token {
             Token::BaseUrl(url) => base_url = url,
             Token::Test(test_name) => {
+                print!("{}", indent_character.repeat(indent));
                 println!("{}", test_name.bold());
+                indent += 1;
+            }
+            Token::End => {
+                indent -= 1;
             }
             Token::TestStatement((function_name, expected_value)) => {
+                print!("{}", indent_character.repeat(indent));
                 println!("{} returns {}", function_name, expected_value);
             }
             Token::HTTPTest((method, url, expected_value)) => {
+                print!("{}", indent_character.repeat(indent));
                 println!("{} {}", method, base_url.to_owned() + &url,);
                 let mut resp = http_client
                     .request(
@@ -119,12 +131,15 @@ async fn main() {
                     }
                 }
                 if fail_reason.len() > 0 {
+                    print!("{}", indent_character.repeat(indent + 1));
                     println!("{}", fail_reason.red());
                 } else {
+                    print!("{}", indent_character.repeat(indent + 1));
                     println!("{}", "Passed".green());
                 }
             }
             Token::CLITest((command, expected_value)) => {
+                print!("{}", indent_character.repeat(indent));
                 println!("{}", command);
                 let command = std::process::Command::new("sh")
                     .arg("-c")
@@ -149,8 +164,10 @@ async fn main() {
                     }
                 }
                 if fail_reason.len() > 0 {
+                    print!("{}", indent_character.repeat(indent + 1));
                     println!("{}", fail_reason.red());
                 } else {
+                    print!("{}", indent_character.repeat(indent + 1));
                     println!("{}", "Passed".green());
                 }
             }
