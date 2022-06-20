@@ -17,6 +17,7 @@ pub fn handle_cli_test(context: &mut RunnerContext<'_>, command: &str, expected_
         .arg(command)
         .output();
     let mut fail_reason = String::new();
+    let expected_value = expected_value.replace('`', "");
     match command {
         Ok(x) => {
             if std::str::from_utf8(&x.stdout).unwrap() != expected_value {

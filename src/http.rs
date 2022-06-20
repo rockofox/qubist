@@ -23,6 +23,7 @@ pub async fn handle_http_test(
         .send()
         .await;
     let mut fail_reason = String::new();
+    let expected_value = expected_value.replace('`', "");
 
     match resp {
         Ok(x) => {

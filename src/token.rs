@@ -8,10 +8,10 @@ pub enum Token {
     #[regex(r"End")]
     End,
 
-    #[regex(r"Function [\w()]+ returns .+", test_statement)]
+    #[regex(r"Function [\w()]+ returns `[^`]+`", test_statement)]
     TestStatement((String, String)),
 
-    #[regex(r"Executing `[^`]+` returns .+", cli_test)]
+    #[regex(r"Executing `[^`]+` returns `[^`]+`", cli_test)]
     CLITest((String, String)),
 
     #[regex(r"Base URL is .+", base_url)]
