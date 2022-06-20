@@ -1,8 +1,7 @@
 use std::{fs, str::FromStr};
 
 use clap::Parser;
-use futures::executor;
-use logos::{Lexer, Logos};
+use logos::Logos;
 use owo_colors::OwoColorize;
 use reqwest::{Client, Method}; // 0.3.1
 
@@ -28,6 +27,9 @@ enum Token {
         http_test
     )]
     HTTPTest((String, String, String)),
+    #[regex(r"#")]
+    Comment,
+
     #[error]
     // #[regex(r"", logos::skip)]
     Error,
@@ -49,7 +51,7 @@ fn cli_test(lex: &mut logos::Lexer<Token>) -> Option<(String, String)> {
         .collect::<String>();
     let expected_value = statement.split("returns ").nth(1).unwrap();
 
-    Some((command.to_string(), expected_value.to_string()))
+    Some((command, expected_value.to_string()))
 }
 
 fn base_url(lex: &mut logos::Lexer<Token>) -> Option<String> {
@@ -60,32 +62,28 @@ fn base_url(lex: &mut logos::Lexer<Token>) -> Option<String> {
         .map(|s| s.to_string())
 }
 fn test(lex: &mut logos::Lexer<Token>) -> Option<String> {
-    Some(lex.slice().split(" ").last().unwrap().to_string())
+    Some(lex.slice().split(' ').last().unwrap().to_string())
 }
 fn test_statement(lex: &mut logos::Lexer<Token>) -> Option<(String, String)> {
     let statement = lex.slice();
-    let function_name = statement.split(" ").nth(1).unwrap();
+    let function_name = statement.split(' ').nth(1).unwrap();
     let expected_value = statement
-        .split(" ")
+        .split(' ')
         .skip(3)
         .collect::<Vec<&str>>()
         .join(" ");
-    Some((function_name.to_string(), expected_value.to_string()))
+    Some((function_name.to_string(), expected_value))
 }
 fn http_test(lex: &mut logos::Lexer<Token>) -> Option<(String, String, String)> {
     let statement = lex.slice();
-    let method = statement.split(" ").nth(0).unwrap();
-    let url = statement.split(" ").nth(1).unwrap();
+    let method = statement.split(' ').next().unwrap();
+    let url = statement.split(' ').nth(1).unwrap();
     let expected_value = statement
-        .split(" ")
+        .split(' ')
         .skip(3)
         .collect::<Vec<&str>>()
         .join(" ");
-    Some((
-        method.to_string(),
-        url.to_string(),
-        expected_value.to_string(),
-    ))
+    Some((method.to_string(), url.to_string(), expected_value))
 }
 #[tokio::main]
 async fn main() {
@@ -114,7 +112,7 @@ async fn main() {
             Token::HTTPTest((method, url, expected_value)) => {
                 print!("{}", indent_character.repeat(indent));
                 println!("{} {}", method, base_url.to_owned() + &url,);
-                let mut resp = http_client
+                let resp = http_client
                     .request(
                         Method::from_str(method.as_str()).expect("Invalid HTTP Method"),
                         base_url.to_owned() + &url,
@@ -129,9 +127,9 @@ async fn main() {
                         let body = x.text().await.unwrap();
                         if body != expected_value {
                             fail_reason.push_str("Response did not match expected value");
-                            fail_reason.push_str("\n");
+                            fail_reason.push('\n');
                             fail_reason.push_str(&format!("Expected: {}", expected_value));
-                            fail_reason.push_str("\n");
+                            fail_reason.push('\n');
                             fail_reason.push_str(&format!("Actual: {}", body));
                         }
                     }
@@ -139,7 +137,7 @@ async fn main() {
                         fail_reason.push_str(&format!("{}", e));
                     }
                 }
-                if fail_reason.len() > 0 {
+                if !fail_reason.is_empty() {
                     print!("{}", indent_character.repeat(indent + 1));
                     println!("{}", fail_reason.red());
                 } else {
@@ -148,8 +146,15 @@ async fn main() {
                 }
             }
             Token::CLITest((command, expected_value)) => {
-                print!("{}", indent_character.repeat(indent));
-                println!("{}", command);
+                let mut sanitized_command = command
+                    .split('\n')
+                    .map(|s| {
+                        return indent_character.repeat(indent) + s.trim();
+                    })
+                    .collect::<Vec<_>>();
+                sanitized_command.retain(|s| !s.trim().is_empty());
+                let sanitized_command = sanitized_command.join("\n");
+                println!("{}", sanitized_command);
                 let command = std::process::Command::new("sh")
                     .arg("-c")
                     .arg(command)
@@ -159,9 +164,9 @@ async fn main() {
                     Ok(x) => {
                         if std::str::from_utf8(&x.stdout).unwrap() != expected_value {
                             fail_reason.push_str("Response body did not match expected value");
-                            fail_reason.push_str("\n");
+                            fail_reason.push('\n');
                             fail_reason.push_str(&format!("Expected: {}", expected_value));
-                            fail_reason.push_str("\n");
+                            fail_reason.push('\n');
                             fail_reason.push_str(&format!(
                                 "Actual: {}",
                                 std::str::from_utf8(&x.stdout).unwrap()
@@ -172,7 +177,7 @@ async fn main() {
                         fail_reason.push_str(&format!("{}", e));
                     }
                 }
-                if fail_reason.len() > 0 {
+                if !fail_reason.is_empty() {
                     print!("{}", indent_character.repeat(indent + 1));
                     println!("{}", fail_reason.red());
                 } else {
@@ -180,6 +185,7 @@ async fn main() {
                     println!("{}", "Passed".green());
                 }
             }
+            Token::Comment => {}
             Token::Error => {
                 // println!("??? {:?}", token);
             }
